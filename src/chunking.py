@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,8 +19,10 @@ def chunk_document(
 ) -> list[Chunk]:
     """Split a document into chunks."""
     if chunk_size <= 0:
+        logger.error("Invalid chunk_size value. Must be greater than zero.")
         raise ValueError("chunk_size must be greater than zero")
     if overlap < 0 or overlap >= chunk_size:
+        logger.error("Invalid overlap value. Must be between zero and chunk_size.")
         raise ValueError("overlap must be between zero and chunk_size")
 
     text = text.strip()
