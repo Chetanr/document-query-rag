@@ -1,5 +1,4 @@
 import logging
-from functools import lru_cache
 
 import chromadb
 from fastapi import Depends, FastAPI, HTTPException
@@ -28,7 +27,6 @@ class AskResponse(BaseModel):
     answer: str
 
 
-@lru_cache(maxsize=1)
 def get_pipeline() -> RAGPipeline:
     try:
         settings = Settings.from_env()
