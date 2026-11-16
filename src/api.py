@@ -1,7 +1,8 @@
 import logging
+from functools import lru_cache
 
 import chromadb
-from fastapi import Depends, FastAPI, HTTPException, logger
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .config import PROJECT_ROOT, Settings, SettingsError
@@ -10,6 +11,7 @@ from .pipeline import RAGPipeline
 from .vectorstore import VectorStore
 
 app = FastAPI(title="Demo RAG App", version="0.1.0")
+logger = logging.getLogger(__name__)
 DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 CHROMA_DIR = PROJECT_ROOT / "data" / "chroma"
 
@@ -26,15 +28,13 @@ class AskResponse(BaseModel):
     answer: str
 
 
+@lru_cache(maxsize=1)
 def get_pipeline() -> RAGPipeline:
     try:
         settings = Settings.from_env()
     except SettingsError as error:
-        logger.error(str(error))
-        raise HTTPException(
-            status_code=503,
-            detail=str(error),
-        ) from error
+        logger.error("Invalid app settings: %s", error)
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     collection = client.get_or_create_collection(name="documents")
@@ -51,11 +51,11 @@ def get_pipeline() -> RAGPipeline:
 
 @app.post("/ingest", response_model=IngestResponse)
 def ingest(pipeline: RAGPipeline = Depends(get_pipeline)) -> IngestResponse:
-    logging.info(f"Ingesting documents from {DOCS_DIR}")
+    logger.info("Ingesting documents from %s", DOCS_DIR)
     try:
         chunks_ingested = pipeline.ingest(str(DOCS_DIR))
     except FileNotFoundError as error:
-        logging.error(f"Directory not found: {DOCS_DIR}")
+        logger.error("Documents directory not found: %s", DOCS_DIR)
         raise HTTPException(status_code=404, detail=str(error)) from error
     return IngestResponse(chunks_ingested=chunks_ingested)
 
@@ -65,11 +65,13 @@ def ask(
     request: AskRequest,
     pipeline: RAGPipeline = Depends(get_pipeline),
 ) -> AskResponse:
-    if not request.question.strip():
-        logging.error("Empty question received")
+    question = request.question.strip()
+    if not question:
+        logger.error("Empty question received")
         raise HTTPException(status_code=422, detail="Question must not be empty")
+
     try:
-        return AskResponse(answer=pipeline.ask(request.question))
+        return AskResponse(answer=pipeline.ask(question))
     except LLMConfigurationError as error:
-        logging.error("LLM configuration error occurred")
+        logger.error("LLM configuration error occurred: %s", error)
         raise HTTPException(status_code=503, detail=str(error)) from error
