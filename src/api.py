@@ -1,21 +1,17 @@
 import logging
-import os
-from pathlib import Path
 
 import chromadb
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, logger
 from pydantic import BaseModel
 
+from .config import PROJECT_ROOT, Settings, SettingsError
 from .llm import AnthropicLLM, LLMConfigurationError
 from .pipeline import RAGPipeline
 from .vectorstore import VectorStore
 
 app = FastAPI(title="Demo RAG App", version="0.1.0")
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 CHROMA_DIR = PROJECT_ROOT / "data" / "chroma"
-load_dotenv(PROJECT_ROOT / ".env")
 
 
 class IngestResponse(BaseModel):
@@ -31,24 +27,14 @@ class AskResponse(BaseModel):
 
 
 def get_pipeline() -> RAGPipeline:
-    top_k_value = os.environ.get("TOP_K")
-    if top_k_value is None:
-        logger.error("TOP_K environment variable not set")
-        raise HTTPException(status_code=503, detail="Set TOP_K in the .env file")
     try:
-        top_k = int(top_k_value)
-    except ValueError as error:
-        logger.error("Invalid TOP_K value. Must be a positive integer.")
+        settings = Settings.from_env()
+    except SettingsError as error:
+        logger.error(str(error))
         raise HTTPException(
             status_code=503,
-            detail="TOP_K must be a positive integer",
+            detail=str(error),
         ) from error
-    if top_k <= 0:
-        logger.error("Invalid TOP_K value. Must be a positive integer.")
-        raise HTTPException(
-            status_code=503,
-            detail="TOP_K must be a positive integer",
-        )
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     collection = client.get_or_create_collection(name="documents")
@@ -56,10 +42,10 @@ def get_pipeline() -> RAGPipeline:
         embedder=None,
         store=VectorStore(collection),
         llm=AnthropicLLM(
-            model=os.environ.get("ANTHROPIC_MODEL"),
-            api_key=os.environ.get("ANTHROPIC_API_KEY"),
+            model=settings.anthropic_model,
+            api_key=settings.anthropic_api_key,
         ),
-        top_k=top_k,
+        top_k=settings.top_k,
     )
 
 
