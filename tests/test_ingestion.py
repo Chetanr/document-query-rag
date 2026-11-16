@@ -89,6 +89,20 @@ def test_pipeline_requires_top_k_configuration(
     assert error.value.detail == "Set TOP_K in the .env file"
 
 
+@pytest.mark.parametrize("top_k", ["invalid", "0", "-1"])
+def test_pipeline_rejects_invalid_top_k_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    top_k: str,
+):
+    monkeypatch.setenv("TOP_K", top_k)
+
+    with pytest.raises(HTTPException) as error:
+        api.get_pipeline()
+
+    assert error.value.status_code == 503
+    assert error.value.detail == "TOP_K must be a positive integer"
+
+
 class RecordingStore:
     def __init__(self):
         self.chunks = []
