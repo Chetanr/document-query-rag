@@ -8,6 +8,7 @@ from .config import PROJECT_ROOT, Settings, SettingsError
 from .llm import AnthropicLLM, LLMConfigurationError
 from .pipeline import RAGPipeline
 from .vectorstore import VectorStore
+from .utils import toxicity
 
 app = FastAPI(title="Demo RAG App", version="0.1.0")
 logger = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ def ask(
         raise HTTPException(status_code=422, detail="Question must not be empty")
 
     try:
+        if toxicity.check_toxicity(question):
+            logger.warning("Toxic content detected in question; request rejected")
+            raise HTTPException(status_code=422, detail="Question contains toxic content")
         return AskResponse(answer=pipeline.ask(question))
     except LLMConfigurationError as error:
         logger.error("LLM configuration error occurred: %s", error)
