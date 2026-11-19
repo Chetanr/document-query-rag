@@ -48,6 +48,7 @@ cp .env.example .env        # then set ANTHROPIC_API_KEY
 | `ANTHROPIC_API_KEY` | Your Anthropic API key                       |
 | `ANTHROPIC_MODEL`   | Model ID used to generate answers            |
 | `TOP_K`             | Number of chunks to retrieve (example: `3`)  |
+| `TOXICITY_THRESHOLD`| Toxicity cutoff, 0–1 (example: `0.5`)        |
 
 `.env` is loaded from the project root, and values already set in the process
 environment take precedence. `.env` is git-ignored.
