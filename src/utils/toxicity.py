@@ -8,7 +8,7 @@ def _load_model() -> Detoxify:
     return Detoxify("original")
 
 
-def check_toxicity(text: str) -> bool:
+def check_toxicity(text: str, threshold: float) -> bool:
     toxicity_score = _load_model().predict(text)["toxicity"]
-    return toxicity_score >= 0.5
+    return toxicity_score >= threshold
 

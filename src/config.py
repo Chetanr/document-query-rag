@@ -19,6 +19,7 @@ class Settings:
     anthropic_api_key: Optional[str]
     anthropic_model: Optional[str]
     top_k: int
+    toxicity_threshold: float
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -32,8 +33,20 @@ class Settings:
         if top_k <= 0:
             raise SettingsError("TOP_K must be a positive integer")
 
+        threshold_value = os.environ.get("TOXICITY_THRESHOLD")
+        if threshold_value is None:
+            raise SettingsError("Set TOXICITY_THRESHOLD in the .env file")
+        try:
+            toxicity_threshold = float(threshold_value)
+        except ValueError as error:
+            raise SettingsError("TOXICITY_THRESHOLD must be a number between 0 and 1") from error
+        if not 0 <= toxicity_threshold <= 1:
+            raise SettingsError("TOXICITY_THRESHOLD must be a number between 0 and 1")
+
         return cls(
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
             anthropic_model=os.environ.get("ANTHROPIC_MODEL"),
             top_k=top_k,
+            toxicity_threshold=toxicity_threshold,
         )
+

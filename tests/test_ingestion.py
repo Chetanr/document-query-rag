@@ -67,6 +67,7 @@ def test_pipeline_uses_configured_anthropic_model(
     monkeypatch.setenv("ANTHROPIC_MODEL", "configured-model-id")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("TOP_K", "3")
+    monkeypatch.setenv("TOXICITY_THRESHOLD", "0.5")
     monkeypatch.setattr(
         api.chromadb, "PersistentClient", lambda path: RecordingClient()
     )
@@ -95,6 +96,7 @@ def test_pipeline_rejects_invalid_top_k_configuration(
     top_k: str,
 ):
     monkeypatch.setenv("TOP_K", top_k)
+    monkeypatch.setenv("TOXICITY_THRESHOLD", "0.5")
 
     with pytest.raises(HTTPException) as error:
         api.get_pipeline()

@@ -28,13 +28,16 @@ class AskResponse(BaseModel):
     answer: str
 
 
-def get_pipeline() -> RAGPipeline:
+def get_settings() -> Settings:
     try:
-        settings = Settings.from_env()
+        return Settings.from_env()
     except SettingsError as error:
         logger.error("Invalid app settings: %s", error)
         raise HTTPException(status_code=503, detail=str(error)) from error
 
+
+def get_pipeline() -> RAGPipeline:
+    settings = get_settings()
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     collection = client.get_or_create_collection(name="documents")
     return RAGPipeline(
@@ -63,6 +66,7 @@ def ingest(pipeline: RAGPipeline = Depends(get_pipeline)) -> IngestResponse:
 def ask(
     request: AskRequest,
     pipeline: RAGPipeline = Depends(get_pipeline),
+    settings: Settings = Depends(get_settings),
 ) -> AskResponse:
     question = request.question.strip()
     if not question:
@@ -70,7 +74,7 @@ def ask(
         raise HTTPException(status_code=422, detail="Question must not be empty")
 
     try:
-        if toxicity.check_toxicity(question):
+        if toxicity.check_toxicity(question, settings.toxicity_threshold):
             logger.warning("Toxic content detected in question; request rejected")
             raise HTTPException(status_code=422, detail="Question contains toxic content")
         return AskResponse(answer=pipeline.ask(question))
