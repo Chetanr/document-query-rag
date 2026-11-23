@@ -10,6 +10,9 @@ dependencies = [
     "chromadb>=0.5",
     "fastapi>=0.110",
     "anthropic>=0.40",
+    "detoxify",
+    "numpy<2",
+    "guardrails-ai>=0.6,<0.7",
     "python-dotenv>=1.0",
     "uvicorn>=0.27",
 ]

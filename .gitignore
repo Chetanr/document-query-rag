@@ -1,5 +1,8 @@
 .venv/
 .pytest_cache/
 data/chroma/
+.env
+.env.*
+!.env.example
 ./src/__pycache__
 __pycache__/
