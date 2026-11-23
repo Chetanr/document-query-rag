@@ -13,15 +13,15 @@ class ChromaCollection(Protocol):
         ids: list[str],
         documents: list[str],
         metadatas: list[dict[str, str]],
-        embeddings: list[list[float]] | None = None,
+        embeddings: list[list[float]],
     ) -> None: ...
 
     def query(
         self,
         *,
-        query_texts: list[str],
         n_results: int,
         include: list[str],
+        query_embeddings: list[list[float]],
     ) -> dict[str, Any]: ...
 
 
@@ -32,7 +32,7 @@ class VectorStore:
     def upsert(
         self,
         chunks: list[Chunk],
-        embeddings: list[list[float]] | None = None,
+        embeddings: list[list[float]],
     ) -> None:
         ids = [
             sha256(f"{chunk.source}:{chunk.index}".encode()).hexdigest()
@@ -43,24 +43,26 @@ class VectorStore:
             {"source": chunk.source, "chunk_index": str(chunk.index)}
             for chunk in chunks
         ]
-        if embeddings is None:
-            self.collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
-        else:
-            self.collection.upsert(
-                ids=ids,
-                documents=documents,
-                metadatas=metadatas,
-                embeddings=embeddings,
-            )
+        self.collection.upsert(
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
 
-    def query(self, text: str, k: int) -> list[Chunk]:
+    def query(
+        self,
+        text: str,
+        k: int,
+        embedding: list[float],
+    ) -> list[Chunk]:
         if not text.strip():
             raise ValueError("query text must not be empty")
         if k <= 0:
             raise ValueError("k must be greater than zero")
 
         results = self.collection.query(
-            query_texts=[text],
+            query_embeddings=[embedding],
             n_results=k,
             include=["documents", "metadatas"],
         )

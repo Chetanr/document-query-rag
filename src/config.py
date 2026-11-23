@@ -32,30 +32,42 @@ class Settings:
     anthropic_model: str | None
     top_k: int
     toxicity_threshold: float
+    embedding_model: str
 
     @classmethod
     def from_env(cls) -> Settings:
         top_k_value = os.environ.get("TOP_K")
         if top_k_value is None:
+            logger.warning("TOP_K is not set")
             raise _fail("Set TOP_K in the .env file")
         try:
             top_k = int(top_k_value)
         except ValueError as error:
+            logger.warning("TOP_K is not a valid integer: %s", top_k_value)
             raise _fail("TOP_K must be a positive integer") from error
         if top_k <= 0:
+            logger.warning("TOP_K is not a positive integer: %s", top_k_value)
             raise _fail("TOP_K must be a positive integer")
 
         threshold_value = os.environ.get("TOXICITY_THRESHOLD")
         if threshold_value is None:
+            logger.warning("TOXICITY_THRESHOLD is not set")
             raise _fail("Set TOXICITY_THRESHOLD in the .env file")
         try:
             toxicity_threshold = float(threshold_value)
         except ValueError as error:
+            logger.warning("TOXICITY_THRESHOLD is not a valid number: %s", threshold_value)
             raise _fail(
                 "TOXICITY_THRESHOLD must be a number between 0 and 1"
             ) from error
         if not 0 <= toxicity_threshold <= 1:
+            logger.warning("TOXICITY_THRESHOLD is not between 0 and 1: %s", threshold_value)
             raise _fail("TOXICITY_THRESHOLD must be a number between 0 and 1")
+
+        embedding_model = os.environ.get("EMBEDDING_MODEL")
+        if not embedding_model:
+            logger.warning("EMBEDDING_MODEL is not set")
+            raise _fail("Set EMBEDDING_MODEL in the .env file")
 
         anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
         anthropic_model = os.environ.get("ANTHROPIC_MODEL")
@@ -75,4 +87,5 @@ class Settings:
             anthropic_model=anthropic_model,
             top_k=top_k,
             toxicity_threshold=toxicity_threshold,
+            embedding_model=embedding_model,
         )

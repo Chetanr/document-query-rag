@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .config import PROJECT_ROOT, Settings, SettingsError
+from .embeddings import SentenceTransformerEmbedder
 from .llm import AnthropicLLM, LLMConfigurationError
 from .pipeline import RAGPipeline
 from .utils import toxicity
@@ -39,9 +40,11 @@ def get_settings() -> Settings:
 def get_pipeline() -> RAGPipeline:
     settings = get_settings()
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-    collection = client.get_or_create_collection(name="documents")
+    collection = client.get_or_create_collection(
+        name="documents", metadata={"hnsw:space": "cosine"}
+    )
     return RAGPipeline(
-        embedder=None,
+        embedder=SentenceTransformerEmbedder(settings.embedding_model),
         store=VectorStore(collection),
         llm=AnthropicLLM(
             model=settings.anthropic_model,

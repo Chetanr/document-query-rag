@@ -61,13 +61,14 @@ def test_pipeline_uses_configured_anthropic_model(
     monkeypatch: pytest.MonkeyPatch,
 ):
     class RecordingClient:
-        def get_or_create_collection(self, name):
+        def get_or_create_collection(self, name, metadata=None):
             return RecordingCollection()
 
     monkeypatch.setenv("ANTHROPIC_MODEL", "configured-model-id")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("TOP_K", "3")
     monkeypatch.setenv("TOXICITY_THRESHOLD", "0.5")
+    monkeypatch.setenv("EMBEDDING_MODEL", "test-embedding-model")
     monkeypatch.setattr(
         api.chromadb, "PersistentClient", lambda path: RecordingClient()
     )
@@ -105,21 +106,31 @@ def test_pipeline_rejects_invalid_top_k_configuration(
     assert error.value.detail == "TOP_K must be a positive integer"
 
 
+class FakeEmbedder:
+    def embed_documents(self, texts):
+        return [[0.1, 0.2] for _ in texts]
+
+    def embed_query(self, text):
+        return [0.1, 0.2]
+
+
 class RecordingStore:
     def __init__(self):
         self.chunks = []
         self.embeddings = None
         self.query_text = None
         self.query_k = None
+        self.query_embedding = None
         self.query_results = []
 
-    def upsert(self, chunks, embeddings=None):
+    def upsert(self, chunks, embeddings):
         self.chunks = chunks
         self.embeddings = embeddings
 
-    def query(self, text, k):
+    def query(self, text, k, embedding):
         self.query_text = text
         self.query_k = k
+        self.query_embedding = embedding
         return self.query_results
 
 
@@ -177,16 +188,16 @@ def test_chunk_document_overlaps_adjacent_chunks():
     assert [chunk.index for chunk in chunks] == [0, 1]
 
 
-def test_pipeline_ingests_chunks_and_uses_chroma_embeddings(tmp_path: Path):
+def test_pipeline_ingests_chunks_with_embedder_embeddings(tmp_path: Path):
     (tmp_path / "guide.md").write_text("A document.", encoding="utf-8")
     store = RecordingStore()
-    pipeline = RAGPipeline(embedder=None, store=store, llm=None, top_k=3)
+    pipeline = RAGPipeline(embedder=FakeEmbedder(), store=store, llm=None, top_k=3)
 
     count = pipeline.ingest(str(tmp_path))
 
     assert count == 1
     assert store.chunks == [Chunk(text="A document.", source="guide.md", index=0)]
-    assert store.embeddings is None
+    assert store.embeddings == [[0.1, 0.2]]
 
 
 def test_vector_store_upserts_stable_ids_and_metadata():
@@ -194,7 +205,7 @@ def test_vector_store_upserts_stable_ids_and_metadata():
     store = VectorStore(collection)
     chunks = [Chunk(text="A document.", source="guide.md", index=0)]
 
-    store.upsert(chunks)
+    store.upsert(chunks, [[0.1, 0.2]])
 
     assert collection.upsert_args is not None
     assert collection.upsert_args["documents"] == ["A document."]
@@ -202,17 +213,17 @@ def test_vector_store_upserts_stable_ids_and_metadata():
         {"source": "guide.md", "chunk_index": "0"}
     ]
     assert len(collection.upsert_args["ids"][0]) == 64
-    assert "embeddings" not in collection.upsert_args
+    assert collection.upsert_args["embeddings"] == [[0.1, 0.2]]
 
 
-def test_vector_store_queries_text_with_chromas_default_embedding():
+def test_vector_store_queries_with_provided_embedding():
     collection = RecordingCollection()
     store = VectorStore(collection)
 
-    chunks = store.query("What does the document say?", k=3)
+    chunks = store.query("What does the document say?", k=3, embedding=[0.1, 0.2])
 
     assert collection.query_args == {
-        "query_texts": ["What does the document say?"],
+        "query_embeddings": [[0.1, 0.2]],
         "n_results": 3,
         "include": ["documents", "metadatas"],
     }
@@ -223,13 +234,14 @@ def test_pipeline_asks_llm_with_top_three_retrieved_chunks():
     store = RecordingStore()
     store.query_results = [Chunk(text="Relevant text.", source="guide.md", index=2)]
     llm = RecordingLLM()
-    pipeline = RAGPipeline(embedder=None, store=store, llm=llm, top_k=3)
+    pipeline = RAGPipeline(embedder=FakeEmbedder(), store=store, llm=llm, top_k=3)
 
     answer = pipeline.ask("What does the document say?")
 
     assert answer == "A grounded answer."
     assert store.query_text == "What does the document say?"
     assert store.query_k == 3
+    assert store.query_embedding == [0.1, 0.2]
     assert "Relevant text." in llm.user
     assert "What does the document say?" in llm.user
     assert "using only the supplied document context" in llm.system
@@ -241,7 +253,7 @@ def test_ingest_endpoint_persists_docs_and_returns_chunk_count(
 ):
     (tmp_path / "guide.md").write_text("A document.", encoding="utf-8")
     store = RecordingStore()
-    pipeline = RAGPipeline(embedder=None, store=store, llm=None, top_k=3)
+    pipeline = RAGPipeline(embedder=FakeEmbedder(), store=store, llm=None, top_k=3)
     monkeypatch.setattr(api, "DOCS_DIR", tmp_path)
     monkeypatch.setitem(
         api.app.dependency_overrides, api.get_pipeline, lambda: pipeline
@@ -260,7 +272,7 @@ def test_ask_endpoint_returns_answer_from_pipeline(
     store = RecordingStore()
     store.query_results = [Chunk(text="The answer is 42.", source="guide.md", index=0)]
     pipeline = RAGPipeline(
-        embedder=None,
+        embedder=FakeEmbedder(),
         store=store,
         llm=RecordingLLM("The answer is 42."),
         top_k=3,
@@ -285,7 +297,7 @@ def test_ask_endpoint_rejects_toxic_question_without_retrieval_or_generation(
     toxicity_stub.result = True
     store = RecordingStore()
     llm = RecordingLLM()
-    pipeline = RAGPipeline(embedder=None, store=store, llm=llm, top_k=3)
+    pipeline = RAGPipeline(embedder=FakeEmbedder(), store=store, llm=llm, top_k=3)
     monkeypatch.setitem(
         api.app.dependency_overrides, api.get_pipeline, lambda: pipeline
     )
@@ -303,7 +315,7 @@ def test_ask_endpoint_rejects_empty_question(
     monkeypatch: pytest.MonkeyPatch,
 ):
     pipeline = RAGPipeline(
-        embedder=None, store=RecordingStore(), llm=RecordingLLM(), top_k=3
+        embedder=FakeEmbedder(), store=RecordingStore(), llm=RecordingLLM(), top_k=3
     )
     monkeypatch.setitem(
         api.app.dependency_overrides, api.get_pipeline, lambda: pipeline
@@ -318,7 +330,7 @@ def test_ask_endpoint_reports_missing_anthropic_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ):
     pipeline = RAGPipeline(
-        embedder=None,
+        embedder=FakeEmbedder(),
         store=RecordingStore(),
         llm=AnthropicLLM(model="claude-sonnet-5-5", api_key=None),
         top_k=3,
@@ -338,7 +350,7 @@ def test_ingest_endpoint_returns_not_found_for_missing_docs_directory(
     monkeypatch: pytest.MonkeyPatch,
 ):
     store = RecordingStore()
-    pipeline = RAGPipeline(embedder=None, store=store, llm=None, top_k=3)
+    pipeline = RAGPipeline(embedder=FakeEmbedder(), store=store, llm=None, top_k=3)
     monkeypatch.setattr(api, "DOCS_DIR", tmp_path / "missing")
     monkeypatch.setitem(
         api.app.dependency_overrides, api.get_pipeline, lambda: pipeline

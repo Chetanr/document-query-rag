@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class RAGPipeline:
     def __init__(
         self,
-        embedder: Embedder | None,
+        embedder: Embedder,
         store: VectorStore,
         llm: LLM | None,
         top_k: int,
@@ -38,11 +38,7 @@ class RAGPipeline:
         if not chunks:
             return 0
 
-        embeddings = (
-            self.embedder.embed_documents([chunk.text for chunk in chunks])
-            if self.embedder is not None
-            else None
-        )
+        embeddings = self.embedder.embed_documents([chunk.text for chunk in chunks])
         self.store.upsert(chunks, embeddings)
         return len(chunks)
 
@@ -55,7 +51,9 @@ class RAGPipeline:
             logger.error("No LLM configured")
             raise RuntimeError("An LLM must be configured to answer questions")
 
-        chunks = self.store.query(question, self.top_k)
+        chunks = self.store.query(
+            question, self.top_k, self.embedder.embed_query(question)
+        )
         context = "\n\n".join(
             f"Source: {chunk.source}\n{chunk.text}" for chunk in chunks
         )

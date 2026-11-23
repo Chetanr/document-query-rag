@@ -26,6 +26,7 @@ def test_settings() -> Settings:
         anthropic_model="test-model",
         top_k=3,
         toxicity_threshold=0.5,
+        embedding_model="test-embedding-model",
     )
 
 
