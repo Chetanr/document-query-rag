@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from .chunking import chunk_document
 from .embeddings import Embedder
 from .llm import LLM
 from .loaders import load_documents
 from .vectorstore import VectorStore
-import logging
 
 logger = logging.getLogger(__name__)
 

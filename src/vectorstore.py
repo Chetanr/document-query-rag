@@ -35,7 +35,7 @@ class VectorStore:
         embeddings: list[list[float]] | None = None,
     ) -> None:
         ids = [
-            sha256(f"{chunk.source}:{chunk.index}".encode("utf-8")).hexdigest()
+            sha256(f"{chunk.source}:{chunk.index}".encode()).hexdigest()
             for chunk in chunks
         ]
         documents = [chunk.text for chunk in chunks]

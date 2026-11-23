@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
-
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +28,13 @@ def _fail(message: str) -> SettingsError:
 
 @dataclass(frozen=True)
 class Settings:
-    anthropic_api_key: Optional[str]
-    anthropic_model: Optional[str]
+    anthropic_api_key: str | None
+    anthropic_model: str | None
     top_k: int
     toxicity_threshold: float
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         top_k_value = os.environ.get("TOP_K")
         if top_k_value is None:
             raise _fail("Set TOP_K in the .env file")
@@ -51,7 +51,9 @@ class Settings:
         try:
             toxicity_threshold = float(threshold_value)
         except ValueError as error:
-            raise _fail("TOXICITY_THRESHOLD must be a number between 0 and 1") from error
+            raise _fail(
+                "TOXICITY_THRESHOLD must be a number between 0 and 1"
+            ) from error
         if not 0 <= toxicity_threshold <= 1:
             raise _fail("TOXICITY_THRESHOLD must be a number between 0 and 1")
 
@@ -74,4 +76,3 @@ class Settings:
             top_k=top_k,
             toxicity_threshold=toxicity_threshold,
         )
-
