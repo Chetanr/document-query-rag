@@ -13,7 +13,10 @@ in front of the LLM.
       │                                       │
    chunking                          toxicity check (Detoxify) ──► 422 if toxic
       │                                       │
- ChromaDB (embeddings)  ◄── top-K similar chunks retrieval
+ sentence-transformers                 sentence-transformers
+ (embed chunks)                        (embed question)
+      │                                       │
+ ChromaDB (vectors)  ◄── top-K nearest chunks retrieval
                                               │
                                    Claude answers using only
                                    the retrieved context
@@ -21,18 +24,19 @@ in front of the LLM.
                                           {"answer": ...}
 ```
 
-1. **Ingest:** `POST /ingest` chunks the files in `data/docs/` and stores them in
-   a persistent ChromaDB collection (`data/chroma/`).
+1. **Ingest:** `POST /ingest` chunks the files in `data/docs/`, embeds each chunk
+   with a [sentence-transformers](https://www.sbert.net/) model and stores the
+   vectors in a persistent ChromaDB collection (`data/chroma/`, cosine distance).
 2. **Screen:** `POST /ask` first scores the question with
    [Detoxify](https://github.com/unitaryai/detoxify). A toxicity score of `0.5`
    or higher is rejected with HTTP `422`, and nothing reaches the LLM.
-3. **Retrieve:** ChromaDB embeds the question and returns the `TOP_K` most
-   similar chunks.
+3. **Retrieve:** the question is embedded with the same model, and ChromaDB
+   returns the `TOP_K` nearest chunks.
 4. **Generate:** Anthropic Claude answers using those chunks as context.
 
 ## Tech stack
 
-Python · FastAPI · ChromaDB · Anthropic API · Detoxify · pytest
+Python · FastAPI · ChromaDB · sentence-transformers · Anthropic API · Detoxify · pytest
 
 ## Quick start
 
@@ -49,6 +53,7 @@ cp .env.example .env        # then set ANTHROPIC_API_KEY
 | `ANTHROPIC_MODEL`   | Model ID used to generate answers            |
 | `TOP_K`             | Number of chunks to retrieve (example: `3`)  |
 | `TOXICITY_THRESHOLD`| Toxicity cutoff, 0–1 (example: `0.5`)        |
+| `EMBEDDING_MODEL`   | sentence-transformers model ID (example: `sentence-transformers/all-MiniLM-L6-v2`) |
 
 `.env` is loaded from the project root, and values already set in the process
 environment take precedence. `.env` is git-ignored.
@@ -66,8 +71,13 @@ curl -X POST http://127.0.0.1:8000/ask \
 # {"answer":"..."}
 ```
 
-The first ingest downloads ChromaDB's default embedding model, and the first
-`/ask` downloads the Detoxify weights.
+The first ingest downloads the sentence-transformers model named in
+`EMBEDDING_MODEL`, and the first `/ask` downloads the Detoxify weights.
+
+If you change `EMBEDDING_MODEL`, or you have a `data/chroma/` folder created
+before this setting existed, delete `data/chroma/` and run `/ingest` again.
+Vectors from a different model have a different dimension and distance metric,
+so queries against them fail or return poor matches.
 
 ## Testing
 
