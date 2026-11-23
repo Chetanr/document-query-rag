@@ -11,8 +11,6 @@ dependencies = [
     "fastapi>=0.110",
     "anthropic>=0.40",
     "detoxify",
-    "numpy<2",
-    "guardrails-ai>=0.6,<0.7",
     "python-dotenv>=1.0",
     "uvicorn>=0.27",
 ]
@@ -26,3 +24,7 @@ packages = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI idiom: Depends() in argument defaults is intentional.
+extend-immutable-calls = ["fastapi.Depends"]
