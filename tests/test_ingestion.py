@@ -278,6 +278,27 @@ def test_ask_endpoint_returns_answer_from_pipeline(
     assert store.query_k == 3
 
 
+def test_ask_endpoint_rejects_toxic_question_without_retrieval_or_generation(
+    monkeypatch: pytest.MonkeyPatch,
+    toxicity_stub,
+):
+    toxicity_stub.result = True
+    store = RecordingStore()
+    llm = RecordingLLM()
+    pipeline = RAGPipeline(embedder=None, store=store, llm=llm, top_k=3)
+    monkeypatch.setitem(
+        api.app.dependency_overrides, api.get_pipeline, lambda: pipeline
+    )
+
+    response = TestClient(api.app).post("/ask", json={"question": "toxic text"})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Question contains toxic content"
+    assert toxicity_stub.calls == [("toxic text", 0.5)]
+    assert store.query_text is None
+    assert llm.user is None
+
+
 def test_ask_endpoint_rejects_empty_question(
     monkeypatch: pytest.MonkeyPatch,
 ):
