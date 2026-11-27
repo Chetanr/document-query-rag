@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
 
-app = FastAPI(title="Demo RAG App", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Document Query App", version="0.1.0", lifespan=lifespan)
 
 
 class IngestResponse(BaseModel):
