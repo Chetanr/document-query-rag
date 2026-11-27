@@ -20,6 +20,12 @@ class AnthropicLLM(LLM):
     def __init__(self, model: str | None, api_key: str | None):
         self.model = model
         self.api_key = api_key
+        self._client: Anthropic | None = None
+
+    def _get_client(self) -> Anthropic:
+        if self._client is None:
+            self._client = Anthropic(api_key=self.api_key)
+        return self._client
 
     def generate(self, system: str, user: str) -> str:
         if not self.api_key:
@@ -28,8 +34,7 @@ class AnthropicLLM(LLM):
         if not self.model:
             raise LLMConfigurationError("Set ANTHROPIC_MODEL in the .env file")
 
-        client = Anthropic(api_key=self.api_key)
-        response = client.messages.create(
+        response = self._get_client().messages.create(
             model=self.model,
             max_tokens=1024,
             system=system,

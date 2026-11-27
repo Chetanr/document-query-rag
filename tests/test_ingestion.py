@@ -2,11 +2,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from src import api
 from src.chunking import Chunk, chunk_document
+from src.config import Settings, SettingsError
 from src.llm import AnthropicLLM, LLMConfigurationError
 from src.loaders import load_documents
 from src.pipeline import RAGPipeline
@@ -73,7 +73,7 @@ def test_pipeline_uses_configured_anthropic_model(
         api.chromadb, "PersistentClient", lambda path: RecordingClient()
     )
 
-    pipeline = api.get_pipeline()
+    pipeline = api.build_pipeline(Settings.from_env())
 
     assert isinstance(pipeline.llm, AnthropicLLM)
     assert pipeline.llm.model == "configured-model-id"
@@ -86,9 +86,8 @@ def test_pipeline_requires_top_k_configuration(
 ):
     monkeypatch.delenv("TOP_K", raising=False)
 
-    with pytest.raises(HTTPException) as error:
-        api.get_pipeline()
-    assert error.value.detail == "Set TOP_K in the .env file"
+    with pytest.raises(SettingsError, match="Set TOP_K in the .env file"):
+        Settings.from_env()
 
 
 @pytest.mark.parametrize("top_k", ["invalid", "0", "-1"])
@@ -99,11 +98,69 @@ def test_pipeline_rejects_invalid_top_k_configuration(
     monkeypatch.setenv("TOP_K", top_k)
     monkeypatch.setenv("TOXICITY_THRESHOLD", "0.5")
 
-    with pytest.raises(HTTPException) as error:
-        api.get_pipeline()
+    with pytest.raises(SettingsError, match="TOP_K must be a positive integer"):
+        Settings.from_env()
 
-    assert error.value.status_code == 503
-    assert error.value.detail == "TOP_K must be a positive integer"
+
+def test_app_startup_fails_fast_on_invalid_settings(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("TOP_K", raising=False)
+
+    with (
+        pytest.raises(SettingsError, match="Set TOP_K in the .env file"),
+        TestClient(api.app),
+    ):
+        pass
+
+
+def test_pipeline_is_built_once_at_startup_and_shared_across_requests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TOP_K", "3")
+    monkeypatch.setenv("TOXICITY_THRESHOLD", "0.5")
+    monkeypatch.setenv("EMBEDDING_MODEL", "test-embedding-model")
+    (tmp_path / "guide.md").write_text("A document.", encoding="utf-8")
+    monkeypatch.setattr(api, "DOCS_DIR", tmp_path)
+    # Use the real lifespan settings rather than the conftest override.
+    monkeypatch.delitem(api.app.dependency_overrides, api.get_settings)
+
+    builds = []
+
+    def fake_build_pipeline(settings):
+        builds.append(settings)
+        return RAGPipeline(
+            embedder=FakeEmbedder(), store=RecordingStore(), llm=None, top_k=3
+        )
+
+    monkeypatch.setattr(api, "build_pipeline", fake_build_pipeline)
+
+    with TestClient(api.app) as client:
+        assert client.post("/ingest").status_code == 200
+        assert client.post("/ingest").status_code == 200
+
+    assert len(builds) == 1
+    assert builds[0].top_k == 3
+
+
+def test_anthropic_llm_reuses_client_across_calls(monkeypatch: pytest.MonkeyPatch):
+    created = []
+    response = SimpleNamespace(content=[SimpleNamespace(type="text", text="Hi.")])
+
+    def fake_anthropic(api_key):
+        created.append(api_key)
+        return SimpleNamespace(
+            messages=SimpleNamespace(create=lambda **kwargs: response)
+        )
+
+    monkeypatch.setattr("src.llm.Anthropic", fake_anthropic)
+    llm = AnthropicLLM(model="model-id", api_key="test-key")
+
+    llm.generate(system="System", user="One")
+    llm.generate(system="System", user="Two")
+
+    assert created == ["test-key"]
 
 
 class FakeEmbedder:

@@ -1,20 +1,50 @@
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import chromadb
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from .config import PROJECT_ROOT, Settings, SettingsError
+from .config import PROJECT_ROOT, Settings
 from .embeddings import SentenceTransformerEmbedder
 from .llm import AnthropicLLM, LLMConfigurationError
 from .pipeline import RAGPipeline
 from .utils import toxicity
 from .vectorstore import VectorStore
 
-app = FastAPI(title="Demo RAG App", version="0.1.0")
 logger = logging.getLogger(__name__)
 DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 CHROMA_DIR = PROJECT_ROOT / "data" / "chroma"
+
+
+def build_pipeline(settings: Settings) -> RAGPipeline:
+    logger.info("Building RAG pipeline")
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    collection = client.get_or_create_collection(
+        name="documents", metadata={"hnsw:space": "cosine"}
+    )
+    return RAGPipeline(
+        embedder=SentenceTransformerEmbedder(settings.embedding_model),
+        store=VectorStore(collection),
+        llm=AnthropicLLM(
+            model=settings.anthropic_model,
+            api_key=settings.anthropic_api_key,
+        ),
+        top_k=settings.top_k,
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    # A SettingsError here aborts startup: fail fast on bad configuration.
+    settings = Settings.from_env()
+    app.state.settings = settings
+    app.state.pipeline = build_pipeline(settings)
+    yield
+
+
+app = FastAPI(title="Demo RAG App", version="0.1.0", lifespan=lifespan)
 
 
 class IngestResponse(BaseModel):
@@ -29,29 +59,12 @@ class AskResponse(BaseModel):
     answer: str
 
 
-def get_settings() -> Settings:
-    try:
-        return Settings.from_env()
-    except SettingsError as error:
-        logger.error("Invalid app settings: %s", error)
-        raise HTTPException(status_code=503, detail=str(error)) from error
+def get_settings(request: Request) -> Settings:
+    return request.app.state.settings
 
 
-def get_pipeline() -> RAGPipeline:
-    settings = get_settings()
-    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-    collection = client.get_or_create_collection(
-        name="documents", metadata={"hnsw:space": "cosine"}
-    )
-    return RAGPipeline(
-        embedder=SentenceTransformerEmbedder(settings.embedding_model),
-        store=VectorStore(collection),
-        llm=AnthropicLLM(
-            model=settings.anthropic_model,
-            api_key=settings.anthropic_api_key,
-        ),
-        top_k=settings.top_k,
-    )
+def get_pipeline(request: Request) -> RAGPipeline:
+    return request.app.state.pipeline
 
 
 @app.post("/ingest", response_model=IngestResponse)
