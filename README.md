@@ -71,12 +71,14 @@ cp .env.example .env        # then set ANTHROPIC_API_KEY
 | `TOXICITY_THRESHOLD` | Toxicity cutoff, 0–1 (example: `0.5`)        |
 | `EMBEDDING_MODEL`    | sentence-transformers model ID (example: `sentence-transformers/all-MiniLM-L6-v2`) |
 
-All five variables are required. If `TOP_K`, `TOXICITY_THRESHOLD` or
-`EMBEDDING_MODEL` is missing or invalid, both endpoints return `503`. If
-`ANTHROPIC_API_KEY` or `ANTHROPIC_MODEL` is missing, `/ask` returns `503`.
+All five variables are required. Settings are read and checked once, when the
+server starts. If `TOP_K`, `TOXICITY_THRESHOLD` or `EMBEDDING_MODEL` is missing
+or invalid, the server won't start and logs the error. If `ANTHROPIC_API_KEY`
+or `ANTHROPIC_MODEL` is missing, the server starts, but `/ask` returns `503`.
 
 `.env` is loaded from the project root, and values already set in the process
-environment take precedence. `.env` is git-ignored.
+environment take precedence. `.env` is git-ignored. Restart the server after
+editing `.env`.
 
 ### Run
 
@@ -111,14 +113,14 @@ so queries against them fail or return poor matches.
 
 | Endpoint | Request body | Success | Errors |
 |---|---|---|---|
-| `POST /ingest` | none | `200 {"chunks_ingested": n}` | `404` document directory missing · `503` configuration error |
-| `POST /ask` | `{"question": "..."}` | `200 {"answer": "..."}` | `422` empty or toxic question · `503` configuration error, missing API key or model |
+| `POST /ingest` | none | `200 {"chunks_ingested": n}` | `404` document directory missing |
+| `POST /ask` | `{"question": "..."}` | `200 {"answer": "..."}` | `422` empty or toxic question · `503` missing API key or model |
 
 ## Project layout
 
 ```
 src/
-  api.py            FastAPI app, endpoints, dependency wiring
+  api.py            FastAPI app, startup wiring (settings + pipeline), endpoints
   config.py         Settings loaded and validated from .env / environment
   pipeline.py       RAGPipeline: ingest (load → chunk → embed → store) and ask
   loaders.py        Reads .md/.txt files from a directory
@@ -153,6 +155,4 @@ toxicity check, so no API key or model download is needed.
   `data/chroma/` and run `/ingest` again.
 - Anthropic timeouts, rate limits and API errors aren't mapped to specific
   responses; they surface as `500`.
-- The embedding model is reloaded on every request, which slows down `/ingest`
-  and `/ask`.
 - Planned: more file types, source citations in answers, streaming responses.
